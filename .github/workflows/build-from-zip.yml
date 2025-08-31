@@ -11,7 +11,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Extract project from ZIP (skip .github)
-        shell: bash
         run: |
           set -e
           ZIP="POTOTIME-Android-GHA.zip"
@@ -26,6 +25,8 @@ jobs:
             SRC="extracted/POTOTIME-Android-GHA"
           fi
 
+          # Pindah semua isi kecuali .github agar tidak bentrok dengan workflow
+          mkdir -p project
           shopt -s dotglob nullglob
           for item in "$SRC"/*; do
             base="$(basename "$item")"
@@ -33,88 +34,19 @@ jobs:
               echo "Skip $item"
               continue
             fi
-            mv -f "$item" ./
+            mv -f "$item" project/
           done
           rm -rf extracted
+          ls -la project
 
-          echo "== Tree after extract =="
-          ls -la
-          test -f app/src/main/AndroidManifest.xml
-
-      # --------- PATCH GRADLE FILES (Groovy DSL valid) ---------
-      - name: Patch root build.gradle
-        shell: bash
+      - name: Relax repositories mode (biar gak gagal di FAIL_ON_PROJECT_REPOS)
         run: |
-          cat > build.gradle <<'EOF'
-plugins {
-    id 'com.android.application' version '8.4.1' apply false
-    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false
-}
-tasks.register("clean", Delete) { delete(rootProject.buildDir) }
-EOF
+          if [ -f project/settings.gradle ]; then
+            sed -i 's/repositoriesMode\.set(RepositoriesMode\.FAIL_ON_PROJECT_REPOS)/repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)/' project/settings.gradle || true
+            echo "== settings.gradle preview =="
+            sed -n '1,120p' project/settings.gradle
+          fi
 
-      - name: Patch settings.gradle
-        shell: bash
-        run: |
-          cat > settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-rootProject.name = "POTOTIMEAndroidWeb"
-include(":app")
-EOF
-
-      - name: Patch app/build.gradle
-        shell: bash
-        run: |
-          cat > app/build.gradle <<'EOF'
-plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-}
-android {
-    namespace 'id.buatmomen.pototime'
-    compileSdk 34
-    defaultConfig {
-        applicationId 'id.buatmomen.pototime'
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
-    }
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-        debug { debuggable true }
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-    kotlinOptions { jvmTarget = '17' }
-}
-dependencies {
-    implementation 'androidx.core:core-ktx:1.13.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
-    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
-}
-EOF
-
-      # --------- TOOLCHAINS ---------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -125,24 +57,74 @@ EOF
         uses: android-actions/setup-android@v3
         with:
           api-level: 34
-          components: "build-tools;34.0.0"
 
       - name: Install Gradle 8.7
-        shell: bash
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
           unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
           echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
           gradle -v
 
-      # --------- BUILD + ARTIFACT ---------
+      - name: Patch Gradle files to modern (root + app)  # tanpa heredoc, pakai printf
+        run: |
+          # root build.gradle
+          printf "%s\n" \
+            "plugins {" \
+            "    id 'com.android.application' version '8.4.1' apply false" \
+            "    id 'org.jetbrains.kotlin.android' version '1.9.24' apply false" \
+            "}" \
+            "tasks.register(\"clean\", Delete) { delete(rootProject.buildDir) }" \
+            > project/build.gradle
+
+          # app/build.gradle (Groovy DSL valid)
+          printf "%s\n" \
+            "plugins {" \
+            "    id 'com.android.application'" \
+            "    id 'org.jetbrains.kotlin.android'" \
+            "}" \
+            "android {" \
+            "    namespace 'id.buatmomen.pototime'" \
+            "    compileSdk 34" \
+            "" \
+            "    defaultConfig {" \
+            "        applicationId 'id.buatmomen.pototime'" \
+            "        minSdk 24" \
+            "        targetSdk 34" \
+            "        versionCode 1" \
+            "        versionName \"1.0.0\"" \
+            "    }" \
+            "" \
+            "    buildTypes {" \
+            "        release {" \
+            "            minifyEnabled false" \
+            "            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'" \
+            "        }" \
+            "        debug { debuggable true }" \
+            "    }" \
+            "" \
+            "    compileOptions {" \
+            "        sourceCompatibility JavaVersion.VERSION_17" \
+            "        targetCompatibility JavaVersion.VERSION_17" \
+            "    }" \
+            "    kotlinOptions { jvmTarget = '17' }" \
+            "}" \
+            "" \
+            "dependencies {" \
+            "    implementation 'androidx.core:core-ktx:1.13.1'" \
+            "    implementation 'androidx.appcompat:appcompat:1.7.0'" \
+            "    implementation 'com.google.android.material:material:1.12.0'" \
+            "    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'" \
+            "}" \
+            > project/app/build.gradle
+
       - name: Build (assembleDebug)
-        shell: bash
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: |
+          cd project
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: POTOTIME-app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
