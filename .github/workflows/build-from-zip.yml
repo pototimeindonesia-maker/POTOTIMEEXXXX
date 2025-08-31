@@ -134,12 +134,12 @@ EOF
           api-level: 34
           components: "build-tools;34.0.0"
 
-      - name: Install Gradle 8.7
+      - name: Install Gradle 8.6
         shell: bash
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-          unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
-          echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
+          wget -q https://services.gradle.org/distributions/gradle-8.6-bin.zip
+          unzip -q gradle-8.6-bin.zip -d "$HOME/gradle"
+          echo "$HOME/gradle/gradle-8.6/bin" >> "$GITHUB_PATH"
           gradle -v
 
       # ---------------- BUILD + ARTIFACT ----------------
