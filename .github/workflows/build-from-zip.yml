@@ -2,13 +2,10 @@ name: Build APK from ZIP
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main", "master" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,7 +18,6 @@ jobs:
           if [ ! -f "$ZIP" ]; then
             echo "ZIP not found: $ZIP"; exit 1
           fi
-
           rm -rf extracted
           unzip -o "$ZIP" -d extracted
 
@@ -45,8 +41,8 @@ jobs:
           ls -la
           test -f app/src/main/AndroidManifest.xml
 
-      # ---------------- PATCH GRADLE FILES ----------------
-      - name: Patch root build.gradle (plugins DSL + versions)
+      # --------- PATCH GRADLE FILES (Groovy DSL valid) ---------
+      - name: Patch root build.gradle
         shell: bash
         run: |
           cat > build.gradle <<'EOF'
@@ -57,7 +53,7 @@ plugins {
 tasks.register("clean", Delete) { delete(rootProject.buildDir) }
 EOF
 
-      - name: Patch settings.gradle (repos only here)
+      - name: Patch settings.gradle
         shell: bash
         run: |
           cat > settings.gradle <<'EOF'
@@ -79,7 +75,7 @@ rootProject.name = "POTOTIMEAndroidWeb"
 include(":app")
 EOF
 
-      - name: Patch app/build.gradle (Groovy DSL valid)
+      - name: Patch app/build.gradle
         shell: bash
         run: |
           cat > app/build.gradle <<'EOF'
@@ -90,7 +86,6 @@ plugins {
 android {
     namespace 'id.buatmomen.pototime'
     compileSdk 34
-
     defaultConfig {
         applicationId 'id.buatmomen.pototime'
         minSdk 24
@@ -98,7 +93,6 @@ android {
         versionCode 1
         versionName "1.0.0"
     }
-
     buildTypes {
         release {
             minifyEnabled false
@@ -106,7 +100,6 @@ android {
         }
         debug { debuggable true }
     }
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -121,11 +114,11 @@ dependencies {
 }
 EOF
 
-      # ---------------- TOOLCHAINS ----------------
+      # --------- TOOLCHAINS ---------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
@@ -134,18 +127,18 @@ EOF
           api-level: 34
           components: "build-tools;34.0.0"
 
-      - name: Install Gradle 8.6
+      - name: Install Gradle 8.7
         shell: bash
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.6-bin.zip
-          unzip -q gradle-8.6-bin.zip -d "$HOME/gradle"
-          echo "$HOME/gradle/gradle-8.6/bin" >> "$GITHUB_PATH"
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle-8.7-bin.zip -d "$HOME/gradle"
+          echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
           gradle -v
 
-      # ---------------- BUILD + ARTIFACT ----------------
+      # --------- BUILD + ARTIFACT ---------
       - name: Build (assembleDebug)
         shell: bash
-        run: gradle :app:assembleDebug --no-daemon --stacktrace --warning-mode all
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
